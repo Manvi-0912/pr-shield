@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PR Shield — AI Code Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ── Design Tokens ─────────────────────────────── */
+    :root {
+      --bg: #ffffff;
+      --surface: #f8f9fb;
+      --border: #e4e8ef;
+      --border-strong: #c8d0dc;
+      --text-primary: #0f1117;
+      --text-secondary: #5a6478;
+      --text-muted: #8a94a6;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-light: #eff6ff;
+      --green: #16a34a;
+      --green-light: #f0fdf4;
+      --amber: #d97706;
+      --amber-light: #fffbeb;
+      --red: #dc2626;
+      --red-light: #fef2f2;
+      --critical: #9333ea;
+      --radius: 8px;
+      --radius-sm: 4px;
+      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    /* ── Layout ────────────────────────────────────── */
+    .shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+    /* ── Sidebar ───────────────────────────────────── */
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 24px 0;
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 16px;
+    }
+    .logo-text { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+    .logo-badge {
+      font-size: 10px; font-weight: 500;
+      background: var(--accent-light); color: var(--accent);
+      padding: 2px 6px; border-radius: 20px; margin-left: auto;
+    }
+
+    .nav { padding: 16px 12px; flex: 1; }
+    .nav-label {
+      font-size: 10px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--text-muted);
+      padding: 0 8px; margin: 16px 0 6px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 8px; border-radius: var(--radius-sm);
+      font-size: 13px; color: var(--text-secondary);
+      cursor: pointer; transition: all .15s;
+      border: none; background: none; width: 100%; text-align: left;
+    }
+    .nav-item:hover { background: var(--surface); color: var(--text-primary); }
+    .nav-item.active {
+      background: var(--accent-light);
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .nav-item .icon { font-size: 15px; width: 18px; text-align: center; }
+
+    .sidebar-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+    }
+    .agent-status { display: flex; flex-direction: column; gap: 6px; }
+    .agent-row {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; color: var(--text-secondary);
+    }
+    .agent-name { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); }
+    .dot.live { background: var(--green); }
+    .provider { font-size: 10px; color: var(--text-muted); }
+
+    /* ── Main ──────────────────────────────────────── */
+    .main { display: flex; flex-direction: column; }
+
+    .topbar {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .topbar-title { font-size: 15px; font-weight: 600; }
+    .topbar-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+
+    .tabs {
+      display: flex; gap: 0;
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+    }
+    .tab {
+      padding: 12px 16px; font-size: 13px; font-weight: 500;
+      color: var(--text-muted); cursor: pointer; border: none; background: none;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+      transition: all .15s;
+    }
+    .tab:hover { color: var(--text-primary); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .content { padding: 28px 32px; flex: 1; }
+
+    /* ── Panel ─────────────────────────────────────── */
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* ── Form Elements ─────────────────────────────── */
+    .field { margin-bottom: 16px; }
+    label {
+      display: block; font-size: 12px; font-weight: 500;
+      color: var(--text-secondary); margin-bottom: 6px;
+    }
+    input[type=text], textarea {
+      width: 100%; padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-family: inherit; font-size: 13px;
+      color: var(--text-primary); background: var(--bg);
+      transition: border-color .15s;
+      resize: vertical;
+    }
+    input[type=text]:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    }
+    textarea.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 16px; font-size: 13px; font-weight: 500;
+      border-radius: var(--radius-sm); cursor: pointer;
+      border: none; transition: all .15s; font-family: inherit;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-ghost {
+      background: var(--surface); color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--border); color: var(--text-primary); }
+
+    /* ── Results ───────────────────────────────────── */
+    #results { margin-top: 24px; }
+
+    .verdict-banner {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px; border-radius: var(--radius);
+      margin-bottom: 20px; font-weight: 500;
+    }
+    .verdict-approve { background: var(--green-light); color: var(--green); }
+    .verdict-request_changes { background: var(--amber-light); color: var(--amber); }
+    .verdict-needs_discussion { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); }
+    .verdict-block { background: var(--red-light); color: var(--red); }
+
+    .verdict-icon { font-size: 20px; }
+    .verdict-info { flex: 1; }
+    .verdict-label { font-size: 13px; font-weight: 600; }
+    .verdict-sub { font-size: 12px; opacity: .8; font-weight: 400; }
+    .elapsed { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+    .agents-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+
+    .agent-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .agent-card-head {
+      padding: 12px 14px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .agent-card-icon { font-size: 16px; }
+    .agent-card-title { font-weight: 600; font-size: 13px; }
+    .agent-card-provider { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+    .agent-card-body { padding: 12px 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
+
+    .section { margin-bottom: 20px; }
+    .section-title {
+      font-size: 12px; font-weight: 600; letter-spacing: .04em;
+      text-transform: uppercase; color: var(--text-muted);
+      margin-bottom: 10px; padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .comment-list { display: flex; flex-direction: column; gap: 8px; }
+    .comment-item {
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      border-left: 3px solid;
+      background: var(--surface);
+      font-size: 13px;
+    }
+    .comment-item.suggestion { border-color: var(--accent); }
+    .comment-item.praise { border-color: var(--green); }
+    .comment-item.concern { border-color: var(--amber); }
+    .comment-item.nit { border-color: var(--border-strong); }
+    .comment-loc { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+    .comment-text { color: var(--text-primary); }
+
+    .vuln-item {
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); margin-bottom: 8px;
+    }
+    .vuln-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .severity-badge {
+      font-size: 10px; font-weight: 600; padding: 2px 7px;
+      border-radius: 20px; text-transform: uppercase;
+    }
+    .sev-critical { background: #f3e8ff; color: var(--critical); }
+    .sev-high { background: var(--red-light); color: var(--red); }
+    .sev-medium { background: var(--amber-light); color: var(--amber); }
+    .sev-low { background: var(--accent-light); color: var(--accent); }
+    .sev-info { background: var(--surface); color: var(--text-muted); }
+    .vuln-type { font-weight: 500; font-size: 13px; }
+    .vuln-loc { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); }
+    .vuln-desc { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+    .vuln-rec { font-size: 12px; color: var(--green); margin-top: 4px; }
+
+    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      font-size: 12px; padding: 3px 10px; border-radius: 20px;
+      background: var(--surface); color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+
+    .loading {
+      display: none;
+      align-items: center; justify-content: center;
+      gap: 12px; padding: 40px; color: var(--text-muted);
+      font-size: 13px;
+    }
+    .loading.visible { display: flex; }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Style Memory Panel ────────────────────────── */
+    .style-info {
+      background: linear-gradient(135deg, var(--accent-light) 0%, #f0f4ff 100%);
+      border: 1px solid #c7d7fa;
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 20px;
+    }
+    .style-info h3 { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+    .style-info p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+
+    .profile-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      background: var(--surface);
+    }
+    .profile-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .profile-style { font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; }
+    .profile-section { margin-top: 12px; }
+    .profile-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 6px; }
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
+    .empty-state .empty-icon { font-size: 32px; margin-bottom: 10px; }
+
+    .infobox {
+      padding: 10px 12px; border-radius: var(--radius-sm);
+      background: var(--accent-light); border: 1px solid #c7d7fa;
+      font-size: 12px; color: var(--accent); margin-bottom: 16px;
+    }
+
+    /* ── Responsive ────────────────────────────────── */
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .agents-grid { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">🛡</div>
+      <span class="logo-text">PR Shield</span>
+      <span class="logo-badge">v1.0</span>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-label">Review</div>
+      <button class="nav-item active" onclick="switchTab('review', this)">
+        <span class="icon">⬡</span> New Review
+      </button>
+      <button class="nav-item" onclick="switchTab('style', this)">
+        <span class="icon">◎</span> Style Memory
+      </button>
+
+      <div class="nav-label">About</div>
+      <button class="nav-item" onclick="switchTab('about', this)">
+        <span class="icon">○</span> How It Works
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div style="font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:10px;">Agent Status</div>
+      <div class="agent-status">
+        <div class="agent-row">
+          <div class="agent-name"><div class="dot live" id="dot-analyst"></div> Analyst</div>
+          <span class="provider">AI/ML API</span>
+        </div>
+        <div class="agent-row">
+          <div class="agent-name"><div class="dot live" id="dot-security"></div> Security</div>
+          <span class="provider">Featherless AI</span>
+        </div>
+        <div class="agent-row">
+          <div class="agent-name"><div class="dot live" id="dot-mentor"></div> Mentor</div>
+          <span class="provider">Gemini</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">Multi-Agent PR Review</div>
+        <div class="topbar-sub">Three AI agents • Learns your team's coding style</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" id="tab-review" onclick="switchPanel('review')">New Review</button>
+      <button class="tab" id="tab-style" onclick="switchPanel('style')">Style Memory</button>
+      <button class="tab" id="tab-about" onclick="switchPanel('about')">How It Works</button>
+    </div>
+
+    <div class="content">
+
+      <!-- ─── Review Panel ─── -->
+      <div class="panel active" id="panel-review">
+        <div id="style-active-notice" style="display:none;" class="infobox">
+          🧠 Style Memory active — Mentor Agent will review as <strong id="style-persona-name"></strong>
+        </div>
+
+        <div class="form-row">
+          <div class="field">
+            <label>PR Title *</label>
+            <input type="text" id="pr-title" placeholder="Add user authentication via OAuth2" maxlength="500">
+          </div>
+          <div class="field">
+            <label>Team ID</label>
+            <input type="text" id="team-id" value="default" placeholder="your-team" maxlength="64">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>PR Description</label>
+          <textarea id="pr-description" rows="3" placeholder="What problem does this PR solve? What approach did you take?"></textarea>
+        </div>
+
+        <div class="field">
+          <label>Diff / Code Changes *</label>
+          <textarea id="pr-diff" class="mono" rows="14"
+            placeholder="Paste your git diff here...
+
+Example:
+diff --git a/auth.py b/auth.py
+@@ -12,6 +12,18 @@
++def authenticate_user(username, password):
++    user = db.query(f'SELECT * FROM users WHERE name={username}')
++    ..."></textarea>
+        </div>
+
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button class="btn btn-primary" id="submit-btn" onclick="submitReview()">
+            ▷ &nbsp;Run Review
+          </button>
+          <button class="btn btn-ghost" onclick="clearForm()">Clear</button>
+          <button class="btn btn-ghost" onclick="loadDemo()">Load Demo</button>
+        </div>
+
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <span id="loading-text">Analyst agent analyzing intent…</span>
+        </div>
+
+        <div id="results"></div>
+      </div>
+
+      <!-- ─── Style Memory Panel ─── -->
+      <div class="panel" id="panel-style">
+        <div class="style-info">
+          <h3>🧠 Style Memory — PR Shield's signature feature</h3>
+          <p>Feed PR Shield examples of your team's merged PRs and the reviews they received. It learns your coding conventions, what your team values, and how your senior developer actually communicates. Every review then sounds like <em>your</em> team wrote it.</p>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+          <div>
+            <div class="section-title" style="margin-bottom:12px;">Add Training Sample</div>
+            <div class="field">
+              <label>Team ID</label>
+              <input type="text" id="style-team-id" value="default" maxlength="64">
+            </div>
+            <div class="field">
+              <label>Reviewer Name</label>
+              <input type="text" id="style-reviewer" placeholder="e.g. Alex Chen" maxlength="128">
+            </div>
+            <div class="field">
+              <label>Merged PR Diff</label>
+              <textarea id="style-diff" class="mono" rows="7" placeholder="Paste a good PR diff from your history…"></textarea>
+            </div>
+            <div class="field">
+              <label>The Review It Received</label>
+              <textarea id="style-review" rows="5" placeholder="The code review feedback given on that PR…"></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="addStyleSample()">Save Sample</button>
+            <div id="style-save-result" style="margin-top:10px; font-size:12px; color:var(--green);"></div>
+          </div>
+
+          <div>
+            <div class="section-title" style="margin-bottom:12px;">Current Profile</div>
+            <div style="display:flex; gap:8px; margin-bottom:12px;">
+              <input type="text" id="profile-team-lookup" value="default" placeholder="Team ID" maxlength="64">
+              <button class="btn btn-ghost" onclick="loadProfile()">Load</button>
+            </div>
+            <div id="profile-display">
+              <div class="empty-state">
+                <div class="empty-icon">◎</div>
+                Enter a team ID and click Load to see their style profile.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── About Panel ─── -->
+      <div class="panel" id="panel-about">
+        <div style="max-width:600px;">
+          <h2 style="font-size:20px; font-weight:600; margin-bottom:6px;">How PR Shield Works</h2>
+          <p style="color:var(--text-secondary); font-size:13px; margin-bottom:24px;">Three specialized AI agents collaborate through the Band SDK to review your code from every angle.</p>
+
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <div style="display:flex; gap:16px; align-items:flex-start;">
+              <div style="width:36px; height:36px; background:var(--accent-light); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">🔍</div>
+              <div>
+                <div style="font-weight:600; margin-bottom:3px;">1. Analyst Agent — AI/ML API</div>
+                <div style="font-size:12px; color:var(--text-secondary); line-height:1.7;">Reads the PR diff and understands what the developer was actually trying to do. Maps code changes to intent. Flags complexity and areas that deserve extra scrutiny.</div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:16px; align-items:flex-start;">
+              <div style="width:36px; height:36px; background:var(--red-light); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">🔒</div>
+              <div>
+                <div style="font-weight:600; margin-bottom:3px;">2. Security Agent — Featherless AI</div>
+                <div style="font-size:12px; color:var(--text-secondary); line-height:1.7;">Scans for SQL injection, XSS, hardcoded secrets, auth flaws, and insecure patterns. Runs a static regex scan first, then deep AI analysis. Runs in parallel with the Analyst.</div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:16px; align-items:flex-start;">
+              <div style="width:36px; height:36px; background:var(--green-light); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">🧑‍💻</div>
+              <div>
+                <div style="font-weight:600; margin-bottom:3px;">3. Mentor Agent — Google Gemini</div>
+                <div style="font-size:12px; color:var(--text-secondary); line-height:1.7;">Synthesizes both agents' findings into a complete code review. With Style Memory, it writes in the voice of YOUR senior developer — not generic AI feedback.</div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:16px; align-items:flex-start;">
+              <div style="width:36px; height:36px; background:linear-gradient(135deg,var(--accent-light),#f0f4ff); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">🧠</div>
+              <div>
+                <div style="font-weight:600; margin-bottom:3px;">Style Memory Engine — The Twist</div>
+                <div style="font-size:12px; color:var(--text-secondary); line-height:1.7;">Feed it merged PRs from your history. It extracts your team's coding DNA: naming conventions, test expectations, what your senior dev pushes back on. Each review gets more personalized over time.</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:24px; padding:14px 16px; background:var(--surface); border-radius:var(--radius); border:1px solid var(--border);">
+            <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-bottom:8px;">Band of Agents Hackathon 2026</div>
+            <div style="font-size:12px; color:var(--text-secondary);">Built with AI/ML API, Featherless AI, and Google Gemini. Three agents collaborating through Band SDK to solve a real problem developers face every day.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  // ── Tab / Panel Switching ──────────────────────────────────
+  function switchPanel(name) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+    // Also update sidebar
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+  }
+  function switchTab(name, el) {
+    switchPanel(name);
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  // ── Check style profile on load ───────────────────────────
+  async function checkActiveProfile() {
+    const teamId = document.getElementById('team-id').value.trim() || 'default';
+    try {
+      const res = await fetch(`/api/style/profile/${encodeURIComponent(teamId)}`);
+      const data = await res.json();
+      if (data.profile) {
+        document.getElementById('style-active-notice').style.display = 'block';
+        document.getElementById('style-persona-name').textContent =
+          data.profile.reviewer_name || 'your senior dev';
+      }
+    } catch(e) {}
+  }
+  document.getElementById('team-id').addEventListener('change', checkActiveProfile);
+  checkActiveProfile();
+
+  // ── Demo PR ───────────────────────────────────────────────
+  function loadDemo() {
+    document.getElementById('pr-title').value = 'Add user login endpoint';
+    document.getElementById('pr-description').value =
+      'Adds a /login route that checks username/password and returns a session token.';
+    document.getElementById('pr-diff').value = `diff --git a/routes/auth.py b/routes/auth.py
+--- a/routes/auth.py
++++ b/routes/auth.py
+@@ -0,0 +1,38 @@
++from flask import request, jsonify
++import sqlite3
++import hashlib
++import os
++
++def login():
++    username = request.form.get('username')
++    password = request.form.get('password')
++
++    # Verify user
++    conn = sqlite3.connect('users.db')
++    query = f"SELECT * FROM users WHERE username='{username}'"
++    user = conn.execute(query).fetchone()
++
++    if user and user['password'] == hashlib.md5(password.encode()).hexdigest():
++        token = os.urandom(16).hex()
++        # TODO: store token somewhere
++        return jsonify({'token': token, 'status': 'ok'})
++    
++    return jsonify({'status': 'invalid credentials'})
++
++# Secret admin backdoor for testing
++ADMIN_PASSWORD = "admin123"
++
++def admin_login():
++    if request.form.get('password') == ADMIN_PASSWORD:
++        return jsonify({'admin': True})`;
+  }
+
+  // ── Submit Review ─────────────────────────────────────────
+  async function submitReview() {
+    const title = document.getElementById('pr-title').value.trim();
+    const diff = document.getElementById('pr-diff').value.trim();
+    const desc = document.getElementById('pr-description').value.trim();
+    const teamId = document.getElementById('team-id').value.trim() || 'default';
+
+    if (!title || !diff) {
+      alert('PR Title and Diff are required.');
+      return;
+    }
+
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    document.getElementById('results').innerHTML = '';
+
+    const loading = document.getElementById('loading');
+    loading.classList.add('visible');
+
+    const messages = [
+      'Analyst agent analyzing intent…',
+      'Security agent scanning for vulnerabilities…',
+      'Mentor agent writing personalized feedback…',
+      'Synthesizing results…'
+    ];
+    let msgIdx = 0;
+    const msgInterval = setInterval(() => {
+      msgIdx = (msgIdx + 1) % messages.length;
+      document.getElementById('loading-text').textContent = messages[msgIdx];
+    }, 2500);
+
+    try {
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ diff, pr_title: title, pr_description: desc, team_id: teamId })
+      });
+
+      clearInterval(msgInterval);
+      loading.classList.remove('visible');
+
+      if (!res.ok) {
+        const err = await res.json();
+        document.getElementById('results').innerHTML =
+          `<div style="color:var(--red); font-size:13px;">Error: ${escHtml(err.error || 'Unknown error')}</div>`;
+        return;
+      }
+
+      const data = await res.json();
+      renderResults(data);
+
+    } catch(e) {
+      clearInterval(msgInterval);
+      loading.classList.remove('visible');
+      document.getElementById('results').innerHTML =
+        `<div style="color:var(--red); font-size:13px;">Network error. Is the server running?</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ── Render Results ─────────────────────────────────────────
+  function renderResults(data) {
+    const analyst = data.agents?.analyst || {};
+    const security = data.agents?.security || {};
+    const mentor = data.agents?.mentor || {};
+    const verdict = data.overall_verdict || 'needs_discussion';
+    const secRisk = data.security_gate || 'review';
+
+    // Verdict banner
+    const verdictConfig = {
+      approve:           { icon: '✓', label: 'Approved',           sub: 'Looks good to merge', cls: 'verdict-approve' },
+      request_changes:   { icon: '△', label: 'Changes Requested',  sub: 'Address feedback before merging', cls: 'verdict-request_changes' },
+      needs_discussion:  { icon: '◎', label: 'Needs Discussion',   sub: 'Questions or concerns to resolve', cls: 'verdict-needs_discussion' },
+      block:             { icon: '✕', label: 'Blocked',            sub: 'Critical security issues found', cls: 'verdict-block' },
+    };
+    const vc = verdictConfig[verdict] || verdictConfig.needs_discussion;
+    const effectiveVc = secRisk === 'block' ? verdictConfig.block : vc;
+
+    let html = `
+      <div class="verdict-banner ${effectiveVc.cls}">
+        <div class="verdict-icon">${effectiveVc.icon}</div>
+        <div class="verdict-info">
+          <div class="verdict-label">${effectiveVc.label}</div>
+          <div class="verdict-sub">${effectiveVc.sub}${data.style_profile_active ? ` · Reviewed as ${escHtml(data.style_profile_name || 'your senior dev')}` : ''}</div>
+        </div>
+        <div class="elapsed">${data.elapsed_seconds}s</div>
+      </div>
+    `;
+
+    // Agent cards row
+    html += `<div class="agents-grid">`;
+
+    // Analyst card
+    const complexity = analyst.complexity || 'unknown';
+    const compColor = {low:'var(--green)', medium:'var(--amber)', high:'var(--red)', unknown:'var(--text-muted)'}[complexity];
+    html += `
+      <div class="agent-card">
+        <div class="agent-card-head">
+          <span class="agent-card-icon">🔍</span>
+          <span class="agent-card-title">Analyst</span>
+          <span class="agent-card-provider">AI/ML API</span>
+        </div>
+        <div class="agent-card-body">
+          <div style="margin-bottom:8px;">${escHtml(analyst.summary || analyst.error || 'No result')}</div>
+          <div style="font-size:11px; color:var(--text-muted);">
+            Complexity: <span style="color:${compColor}; font-weight:500;">${complexity}</span>
+          </div>
+        </div>
+      </div>`;
+
+    // Security card
+    const vulns = security.vulnerabilities || [];
+    const critCount = vulns.filter(v => ['critical','high'].includes(v.severity)).length;
+    const riskColor = {pass:'var(--green)', review:'var(--amber)', block:'var(--red)'}[secRisk] || 'var(--text-muted)';
+    const secretCount = (security.secret_scan || []).length;
+    html += `
+      <div class="agent-card">
+        <div class="agent-card-head">
+          <span class="agent-card-icon">🔒</span>
+          <span class="agent-card-title">Security</span>
+          <span class="agent-card-provider">Featherless AI</span>
+        </div>
+        <div class="agent-card-body">
+          <div style="margin-bottom:6px; font-size:12px;">
+            Risk: <span style="font-weight:600; color:${riskColor};">${secRisk.toUpperCase()}</span>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted);">
+            ${vulns.length} issue(s) found${critCount > 0 ? ` · <span style="color:var(--red)">${critCount} critical/high</span>` : ''}
+            ${secretCount > 0 ? ` · <span style="color:var(--critical)">${secretCount} secret(s) detected</span>` : ''}
+          </div>
+          ${security.error ? `<div style="font-size:11px; color:var(--red); margin-top:4px;">${escHtml(security.error)}</div>` : ''}
+        </div>
+      </div>`;
+
+    // Mentor card
+    html += `
+      <div class="agent-card">
+        <div class="agent-card-head">
+          <span class="agent-card-icon">🧑‍💻</span>
+          <span class="agent-card-title">Mentor</span>
+          <span class="agent-card-provider">Gemini</span>
+        </div>
+        <div class="agent-card-body">
+          <div style="margin-bottom:6px; font-size:11px; color:var(--text-muted);">
+            Voice: ${escHtml(mentor.tone_used || 'Default senior developer')}
+          </div>
+          ${mentor.error ? `<div style="font-size:11px; color:var(--red);">${escHtml(mentor.error)}</div>` : ''}
+        </div>
+      </div>`;
+
+    html += `</div>`;
+
+    // Mentor summary
+    if (mentor.summary_feedback) {
+      html += `
+        <div class="section">
+          <div class="section-title">Review Summary</div>
+          <div style="font-size:13px; line-height:1.8; color:var(--text-primary); padding:14px 16px; background:var(--surface); border-radius:var(--radius); border-left:3px solid var(--accent);">
+            ${escHtml(mentor.summary_feedback)}
+          </div>
+        </div>`;
+    }
+
+    // Vulnerabilities
+    if (vulns.length > 0 || (security.secret_scan || []).length > 0) {
+      html += `<div class="section"><div class="section-title">Security Findings</div>`;
+
+      for (const s of (security.secret_scan || [])) {
+        html += `
+          <div class="vuln-item">
+            <div class="vuln-head">
+              <span class="severity-badge sev-critical">Critical</span>
+              <span class="vuln-type">${escHtml(s.label)}</span>
+            </div>
+            <div class="vuln-desc">${escHtml(s.note)}</div>
+          </div>`;
+      }
+
+      for (const v of vulns) {
+        const sevCls = `sev-${v.severity || 'info'}`;
+        html += `
+          <div class="vuln-item">
+            <div class="vuln-head">
+              <span class="severity-badge ${sevCls}">${escHtml(v.severity || 'info')}</span>
+              <span class="vuln-type">${escHtml(v.type || 'Issue')}</span>
+            </div>
+            ${v.location ? `<div class="vuln-loc">${escHtml(v.location)}</div>` : ''}
+            ${v.description ? `<div class="vuln-desc">${escHtml(v.description)}</div>` : ''}
+            ${v.recommendation ? `<div class="vuln-rec">→ ${escHtml(v.recommendation)}</div>` : ''}
+          </div>`;
+      }
+
+      html += `</div>`;
+    }
+
+    // Inline comments
+    const comments = mentor.inline_comments || [];
+    if (comments.length > 0) {
+      html += `<div class="section"><div class="section-title">Inline Comments</div><div class="comment-list">`;
+      for (const c of comments) {
+        html += `
+          <div class="comment-item ${escHtml(c.type || 'suggestion')}">
+            ${c.location ? `<div class="comment-loc">${escHtml(c.location)}</div>` : ''}
+            <div class="comment-text">${escHtml(c.comment)}</div>
+          </div>`;
+      }
+      html += `</div></div>`;
+    }
+
+    // Done well / required / optional
+    const doneWell = mentor.what_was_done_well || [];
+    const required = mentor.required_changes || [];
+    const optional = mentor.optional_improvements || [];
+
+    if (doneWell.length || required.length || optional.length) {
+      html += `<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:8px;">`;
+
+      if (doneWell.length) {
+        html += `<div><div class="section-title">What Worked</div><div class="comment-list">`;
+        for (const item of doneWell) html += `<div class="comment-item praise"><div class="comment-text">${escHtml(item)}</div></div>`;
+        html += `</div></div>`;
+      }
+
+      if (required.length) {
+        html += `<div><div class="section-title">Required Changes</div><div class="comment-list">`;
+        for (const item of required) html += `<div class="comment-item concern"><div class="comment-text">${escHtml(item)}</div></div>`;
+        html += `</div></div>`;
+      }
+
+      if (optional.length) {
+        html += `<div><div class="section-title">Optional Improvements</div><div class="comment-list">`;
+        for (const item of optional) html += `<div class="comment-item nit"><div class="comment-text">${escHtml(item)}</div></div>`;
+        html += `</div></div>`;
+      }
+
+      html += `</div>`;
+    }
+
+    // Key changes tags
+    const keyChanges = analyst.key_changes || [];
+    if (keyChanges.length) {
+      html += `<div class="section" style="margin-top:16px;"><div class="section-title">Key Changes Identified</div><div class="tag-list">`;
+      for (const c of keyChanges) html += `<span class="tag">${escHtml(c)}</span>`;
+      html += `</div></div>`;
+    }
+
+    document.getElementById('results').innerHTML = html;
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── Style Memory ──────────────────────────────────────────
+  async function addStyleSample() {
+    const teamId = document.getElementById('style-team-id').value.trim() || 'default';
+    const reviewer = document.getElementById('style-reviewer').value.trim() || 'Senior Dev';
+    const diff = document.getElementById('style-diff').value.trim();
+    const review = document.getElementById('style-review').value.trim();
+
+    if (!diff || !review) {
+      document.getElementById('style-save-result').textContent = 'Diff and review text are required.';
+      document.getElementById('style-save-result').style.color = 'var(--red)';
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/style/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: teamId, reviewer_name: reviewer, diff, review_text: review })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        document.getElementById('style-save-result').textContent =
+          `✓ Saved. ${data.sample_count} sample(s) for "${teamId}". Profile rebuilding…`;
+        document.getElementById('style-save-result').style.color = 'var(--green)';
+        document.getElementById('style-diff').value = '';
+        document.getElementById('style-review').value = '';
+      } else {
+        document.getElementById('style-save-result').textContent = data.error || 'Failed.';
+        document.getElementById('style-save-result').style.color = 'var(--red)';
+      }
+    } catch(e) {
+      document.getElementById('style-save-result').textContent = 'Network error.';
+      document.getElementById('style-save-result').style.color = 'var(--red)';
+    }
+  }
+
+  async function loadProfile() {
+    const teamId = document.getElementById('profile-team-lookup').value.trim() || 'default';
+    try {
+      const res = await fetch(`/api/style/profile/${encodeURIComponent(teamId)}`);
+      const data = await res.json();
+
+      if (data.profile) {
+        const p = data.profile;
+        let html = `<div class="profile-card">`;
+        html += `<div class="profile-name">${escHtml(p.reviewer_name || 'Senior Dev')}</div>`;
+        html += `<div class="profile-style">${escHtml(p.communication_style || '')}</div>`;
+        html += `<div style="font-size:11px; color:var(--text-muted);">${data.sample_count} training sample(s)</div>`;
+
+        if (p.values?.length) {
+          html += `<div class="profile-section"><div class="profile-section-title">Values</div><div class="tag-list">`;
+          for (const v of p.values) html += `<span class="tag">${escHtml(v)}</span>`;
+          html += `</div></div>`;
+        }
+        if (p.pet_peeves?.length) {
+          html += `<div class="profile-section"><div class="profile-section-title">Pet Peeves</div><div class="tag-list">`;
+          for (const v of p.pet_peeves) html += `<span class="tag" style="border-color:var(--amber);">${escHtml(v)}</span>`;
+          html += `</div></div>`;
+        }
+        if (p.summary) {
+          html += `<div class="profile-section"><div class="profile-section-title">Review Style</div>`;
+          html += `<div style="font-size:12px; color:var(--text-secondary);">${escHtml(p.summary)}</div></div>`;
+        }
+        html += `</div>`;
+        document.getElementById('profile-display').innerHTML = html;
+      } else {
+        document.getElementById('profile-display').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">◎</div>
+            No style profile for "<strong>${escHtml(teamId)}</strong>" yet.<br>
+            Add training samples to build one.
+          </div>`;
+      }
+    } catch(e) {
+      document.getElementById('profile-display').innerHTML =
+        `<div style="color:var(--red); font-size:13px;">Failed to load profile.</div>`;
+    }
+  }
+
+  function clearForm() {
+    document.getElementById('pr-title').value = '';
+    document.getElementById('pr-description').value = '';
+    document.getElementById('pr-diff').value = '';
+    document.getElementById('results').innerHTML = '';
+  }
+
+  // Escape HTML to prevent XSS in rendered results
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+</script>
+</body>
+</html>
