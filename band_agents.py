@@ -7,7 +7,7 @@ import os
 import asyncio
 import json
 from dotenv import load_dotenv
-import band
+
 
 load_dotenv()
 
