@@ -6,4 +6,4 @@ google-genai>=0.8.0
 bleach==6.1.0
 cryptography==42.0.8
 gunicorn==21.2.0 
-band-sdk 
+band-sdk==0.1.0
