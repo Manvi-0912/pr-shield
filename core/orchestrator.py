@@ -31,7 +31,7 @@ def run_review(
     Run the full PR Shield pipeline:
     1. Analyst understands intent (AI/ML API)
     2. Security scans for vulnerabilities (Featherless AI) — runs in parallel with Analyst
-    3. Mentor synthesizes everything into personalized feedback (Gemini)
+    3. Mentor synthesizes everything into personalized feedback (AI/ML API)
 
     Returns the complete review with all agent outputs.
     """
