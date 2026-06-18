@@ -69,6 +69,6 @@ Every other team built an AI code reviewer. PR Shield builds YOUR code reviewer.
 Band of Agents Hackathon 2026 on lablab.ai from June 12 to June 19.
 ## 📸 Demo
 
-![Homepage](screenshots/homepage.jpg)
-![Review Output](screenshots/review-output.jpg)
-![Style Memory](screenshots/style-memory.jpg)
+![Homepage]("C:\Users\lenovo\Downloads\homepage.jpeg")
+![Review Output]("C:\Users\lenovo\Downloads\review-output.jpeg")
+![Style Memory]("C:\Users\lenovo\Downloads\style-memory.jpeg")
